@@ -197,15 +197,33 @@ async function forwardToSorta({ from, body, mediaBase64, mimeType, filename, gro
   }
 }
 
-// The "Execution context was destroyed" error is a known whatsapp-web.js race
-// condition during page navigation. Catch it here so the process doesn't die —
-// just clean lock files and reinitialize automatically.
+// Guard against concurrent reinitializations
+let reinitPending = false;
+
+async function safeReinit() {
+  if (reinitPending) return;
+  reinitPending = true;
+  console.warn('[init] scheduling reinitialization in 8s…');
+  try { await client.destroy(); } catch { /* ignore */ }
+  removeLockFiles(DATA_PATH);
+  await new Promise(r => setTimeout(r, 8000));
+  reinitPending = false;
+  console.warn('[init] reinitializing client…');
+  client.initialize().catch(() => {});
+}
+
+// Catch known recoverable whatsapp-web.js errors so the process doesn't die
 process.on('unhandledRejection', (reason) => {
   const msg = reason?.message || String(reason);
-  if (msg.includes('Execution context was destroyed') || msg.includes('Session closed')) {
-    console.warn('[init] WhatsApp page navigation race — reinitializing in 5s…');
-    removeLockFiles(DATA_PATH);
-    setTimeout(() => client.initialize(), 5000);
+  const recoverable = [
+    'Execution context was destroyed',
+    'Session closed',
+    'browser is already running',
+    'Target closed',
+  ];
+  if (recoverable.some(s => msg.includes(s))) {
+    console.warn('[init] recoverable error, reinitializing:', msg.split('\n')[0]);
+    safeReinit();
   } else {
     console.error('[fatal] unhandled rejection:', reason);
     process.exit(1);
