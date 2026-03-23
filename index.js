@@ -220,6 +220,8 @@ process.on('unhandledRejection', (reason) => {
     'Session closed',
     'browser is already running',
     'Target closed',
+    'detached Frame',
+    'Detached Frame',
   ];
   if (recoverable.some(s => msg.includes(s))) {
     console.warn('[init] recoverable error, reinitializing:', msg.split('\n')[0]);
