@@ -127,11 +127,14 @@ client.on('disconnected', (reason) => {
   setTimeout(() => client.initialize(), 5000);
 });
 
-client.on('message', async (msg) => {
-  // Only handle incoming group messages with media
-  if (msg.fromMe) return;
+client.on('message_create', async (msg) => {
+  // Only handle group messages with media (fromMe = sent by the linked account, still valid intake)
   if (!msg.from.endsWith('@g.us')) return;
   if (!msg.hasMedia) return;
+  // Skip confirmation replies sent by the bot itself (text only, no media — but guard anyway)
+  if (msg.fromMe && msg.type === 'chat') return;
+
+  console.log(`[msg] fromMe=${msg.fromMe} group=${msg.from} type=${msg.type}`);
 
   const chat = await msg.getChat();
   const groupJid = msg.from;
