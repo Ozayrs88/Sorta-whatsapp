@@ -1,0 +1,8 @@
+[phases.setup]
+nixPkgs = ["nodejs_20", "chromium", "glib", "nss", "nspr", "atk", "cups", "dbus", "expat", "libdrm", "libxkbcommon", "xorg.libX11", "xorg.libXcomposite", "xorg.libXdamage", "xorg.libXext", "xorg.libXfixes", "xorg.libXrandr", "mesa", "pango", "cairo", "alsa-lib"]
+
+[phases.install]
+cmds = ["npm ci"]
+
+[start]
+cmd = "node index.js"
