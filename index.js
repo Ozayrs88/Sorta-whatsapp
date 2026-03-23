@@ -9,8 +9,9 @@ const SORTA_URL = process.env.SORTA_URL?.replace(/\/$/, '');
 const INTAKE_SECRET = process.env.WHATSAPP_INTAKE_SECRET;
 const SIDECAR_PORT = parseInt(process.env.PORT || process.env.SIDECAR_PORT || '3001', 10);
 
-// Session is stored in the Railway volume mounted at /data
-const DATA_PATH = process.env.AUTH_STATE_PATH || '/data/whatsapp-session';
+// Session is stored in the Railway volume. Default to /data so LocalAuth writes
+// to /data/.wwebjs_auth/ — consistent with the original mount point.
+const DATA_PATH = process.env.AUTH_STATE_PATH || process.env.RAILWAY_VOLUME_MOUNT_PATH || '/data';
 
 if (!SORTA_URL || !INTAKE_SECRET) {
   console.error('Missing SORTA_URL or WHATSAPP_INTAKE_SECRET in .env');
