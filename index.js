@@ -110,13 +110,27 @@ client.on('ready', async () => {
   currentQRDataUrl = null;
   console.log('[ws] ✓ WhatsApp ready');
 
-  // Log all groups so you can identify them in settings
+  // Log and sync all groups to Sorta settings so they appear without waiting for a message
   const chats = await client.getChats();
   const groups = chats.filter(c => c.isGroup);
   if (groups.length) {
     console.log('\n── Your WhatsApp Groups ──');
     groups.forEach(g => console.log(`  "${g.name}"  →  ${g.id._serialized}`));
     console.log('─────────────────────────\n');
+
+    try {
+      await axios.post(
+        `${SORTA_URL}/api/whatsapp/sync-groups`,
+        {
+          secret: INTAKE_SECRET,
+          groups: groups.map(g => ({ jid: g.id._serialized, name: g.name })),
+        },
+        { timeout: 15_000 }
+      );
+      console.log(`[ws] synced ${groups.length} groups to Sorta settings`);
+    } catch (err) {
+      console.warn('[ws] group sync failed (non-critical):', err.message);
+    }
   }
 });
 
