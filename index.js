@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import pkg from 'whatsapp-web.js';
-const { Client, LocalAuth, MessageMedia } = pkg;
+const { Client, LocalAuth } = pkg;
 import QRCode from 'qrcode';
 import axios from 'axios';
 import http from 'http';
@@ -9,11 +9,8 @@ const SORTA_URL = process.env.SORTA_URL?.replace(/\/$/, '');
 const INTAKE_SECRET = process.env.WHATSAPP_INTAKE_SECRET;
 const SIDECAR_PORT = parseInt(process.env.PORT || process.env.SIDECAR_PORT || '3001', 10);
 
-// Railway injects RAILWAY_VOLUME_MOUNT_PATH when a volume is attached.
-// whatsapp-web.js LocalAuth stores session under {dataPath}/.wwebjs_auth/
-const DATA_PATH = process.env.AUTH_STATE_PATH
-  || process.env.RAILWAY_VOLUME_MOUNT_PATH
-  || '.';
+// Session is stored in the Railway volume mounted at /data
+const DATA_PATH = process.env.AUTH_STATE_PATH || '/data/whatsapp-session';
 
 if (!SORTA_URL || !INTAKE_SECRET) {
   console.error('Missing SORTA_URL or WHATSAPP_INTAKE_SECRET in .env');
@@ -41,20 +38,46 @@ server.listen(SIDECAR_PORT, () => {
   console.log(`[http] status server on port ${SIDECAR_PORT}`);
 });
 
+// Clean up stale Chromium lock file if it exists (prevents "profile in use" errors on restart)
+try {
+  const { existsSync, unlinkSync } = await import('fs');
+  const { join } = await import('path');
+  const lockFile = join(DATA_PATH, 'SingletonLock');
+  if (existsSync(lockFile)) {
+    unlinkSync(lockFile);
+    console.log('[init] removed stale Chromium lock file');
+  }
+} catch { /* non-critical */ }
+
 // ── WhatsApp client ───────────────────────────────────────────────────────────
 const client = new Client({
   authStrategy: new LocalAuth({ dataPath: DATA_PATH }),
   puppeteer: {
     headless: true,
-    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH,
+    timeout: 90000,
+    protocolTimeout: 90000,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
+      '--disable-gpu',
+      '--disable-extensions',
+      '--disable-software-rasterizer',
       '--no-first-run',
       '--no-zygote',
-      '--disable-gpu',
+      '--disable-background-networking',
+      '--disable-default-apps',
+      '--disable-sync',
+      '--disable-translate',
+      '--hide-scrollbars',
+      '--metrics-recording-only',
+      '--mute-audio',
+      '--no-default-browser-check',
+      '--safebrowsing-disable-auto-update',
+      '--disable-client-side-phishing-detection',
+      '--disable-component-update',
+      '--disable-hang-monitor',
     ],
   },
 });
@@ -62,11 +85,7 @@ const client = new Client({
 client.on('qr', async (qr) => {
   currentQRDataUrl = await QRCode.toDataURL(qr).catch(() => null);
   isConnected = false;
-  console.log('\n── QR ready — open Sorta Settings → WhatsApp to scan ──\n');
-  // Also print ASCII fallback in logs
-  const { default: qrcodeTerminal } = await import('qrcode-terminal');
-  qrcodeTerminal.generate(qr, { small: true });
-  console.log('\n────────────────────────────────────────────────────────\n');
+  console.log('[ws] QR ready — open Sorta Settings → WhatsApp to scan');
 });
 
 client.on('authenticated', () => {
@@ -96,7 +115,7 @@ client.on('disconnected', (reason) => {
   setTimeout(() => client.initialize(), 5000);
 });
 
-client.on('message_create', async (msg) => {
+client.on('message', async (msg) => {
   // Only handle incoming group messages with media
   if (msg.fromMe) return;
   if (!msg.from.endsWith('@g.us')) return;
