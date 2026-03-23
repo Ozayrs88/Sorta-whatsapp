@@ -25,6 +25,10 @@ let currentQRDataUrl = null;
 let isConnected = false;
 let cachedGroups = []; // { jid, name }
 
+// ── Dedup: ignore message IDs we've already forwarded (survives reinit within same process)
+const recentlyForwarded = new Set();
+const DEDUP_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 // ── Tiny HTTP status server ───────────────────────────────────────────────────
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost`);
@@ -133,6 +137,17 @@ client.on('message_create', async (msg) => {
   if (!msg.hasMedia) return;
   // Skip confirmation replies sent by the bot itself (text only, no media — but guard anyway)
   if (msg.fromMe && msg.type === 'chat') return;
+
+  // Dedup — whatsapp-web.js can fire message_create twice for the same message
+  const msgId = msg.id?.id || msg.id?._serialized;
+  if (msgId && recentlyForwarded.has(msgId)) {
+    console.log(`[msg] skipping duplicate message ${msgId}`);
+    return;
+  }
+  if (msgId) {
+    recentlyForwarded.add(msgId);
+    setTimeout(() => recentlyForwarded.delete(msgId), DEDUP_TTL_MS);
+  }
 
   console.log(`[msg] fromMe=${msg.fromMe} group=${msg.from} type=${msg.type}`);
 
