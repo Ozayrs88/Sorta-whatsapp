@@ -2,8 +2,10 @@ import 'dotenv/config';
 import { makeWASocket, useMultiFileAuthState, DisconnectReason, downloadMediaMessage } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import qrcodeTerminal from 'qrcode-terminal';
+import QRCode from 'qrcode';
 import axios from 'axios';
 import pino from 'pino';
+import http from 'http';
 
 const SORTA_URL = process.env.SORTA_URL?.replace(/\/$/, '');
 const INTAKE_SECRET = process.env.WHATSAPP_INTAKE_SECRET;
@@ -18,7 +20,38 @@ if (!SORTA_URL || !INTAKE_SECRET) {
   process.exit(1);
 }
 
+const SIDECAR_PORT = parseInt(process.env.PORT || process.env.SIDECAR_PORT || '3001', 10);
+
 const logger = pino({ level: 'silent' });
+
+// Live state exposed via the /qr HTTP endpoint
+let currentQRDataUrl = null;
+let isConnected = false;
+
+// ── Tiny status HTTP server ──────────────────────────────────────────────────
+// GET /qr?secret=... → { connected, qr }
+// Sorta's /api/whatsapp/status proxies this so the settings page can render
+// the QR code or a "Connected" badge without anyone digging through Railway logs.
+const server = http.createServer(async (req, res) => {
+  const url = new URL(req.url, `http://localhost`);
+  if (req.method !== 'GET' || url.pathname !== '/qr') {
+    res.writeHead(404);
+    res.end();
+    return;
+  }
+  const secret = url.searchParams.get('secret');
+  if (!secret || secret !== INTAKE_SECRET) {
+    res.writeHead(401);
+    res.end(JSON.stringify({ error: 'Unauthorized' }));
+    return;
+  }
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ connected: isConnected, qr: currentQRDataUrl }));
+});
+
+server.listen(SIDECAR_PORT, () => {
+  console.log(`[http] status server listening on port ${SIDECAR_PORT}`);
+});
 
 // Cache group names so we don't fetch metadata on every message
 const groupNameCache = new Map();
@@ -65,12 +98,17 @@ async function startSock() {
 
   sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
     if (qr) {
-      console.log('\n── Scan this QR code in WhatsApp → Linked Devices ──\n');
+      // Store as PNG data URL for the settings page QR display
+      currentQRDataUrl = await QRCode.toDataURL(qr).catch(() => null);
+      isConnected = false;
+      // Also print to terminal as a fallback
+      console.log('\n── Scan QR in WhatsApp → Linked Devices (or open Sorta Settings) ──\n');
       qrcodeTerminal.generate(qr, { small: true });
-      console.log('\n────────────────────────────────────────────────────\n');
+      console.log('\n──────────────────────────────────────────────────────────────────\n');
     }
 
     if (connection === 'close') {
+      isConnected = false;
       const statusCode = new Boom(lastDisconnect?.error)?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       console.log(`[ws] connection closed (${statusCode}) — ${shouldReconnect ? 'reconnecting…' : 'logged out, delete auth_state/ to re-link'}`);
@@ -78,6 +116,8 @@ async function startSock() {
     }
 
     if (connection === 'open') {
+      isConnected = true;
+      currentQRDataUrl = null; // clear QR once connected
       console.log('[ws] ✓ WhatsApp connected');
 
       // Log all current groups on startup so you can identify their JIDs
