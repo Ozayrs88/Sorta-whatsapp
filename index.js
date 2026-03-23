@@ -4,6 +4,8 @@ const { Client, LocalAuth } = pkg;
 import QRCode from 'qrcode';
 import axios from 'axios';
 import http from 'http';
+import fs from 'fs';
+import path from 'path';
 
 const SORTA_URL = process.env.SORTA_URL?.replace(/\/$/, '');
 const INTAKE_SECRET = process.env.WHATSAPP_INTAKE_SECRET;
@@ -39,16 +41,24 @@ server.listen(SIDECAR_PORT, () => {
   console.log(`[http] status server on port ${SIDECAR_PORT}`);
 });
 
-// Clean up stale Chromium lock file if it exists (prevents "profile in use" errors on restart)
-try {
-  const { existsSync, unlinkSync } = await import('fs');
-  const { join } = await import('path');
-  const lockFile = join(DATA_PATH, 'SingletonLock');
-  if (existsSync(lockFile)) {
-    unlinkSync(lockFile);
-    console.log('[init] removed stale Chromium lock file');
-  }
-} catch { /* non-critical */ }
+// Recursively remove Chromium lock files from the session directory.
+// LocalAuth stores the browser profile at {DATA_PATH}/.wwebjs_auth/session/
+// and Chromium writes SingletonLock there, blocking restarts if not cleaned up.
+function removeLockFiles(dir) {
+  try {
+    if (!fs.existsSync(dir)) return;
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (['SingletonLock', 'SingletonSocket', 'SingletonCookie'].includes(entry.name)) {
+        fs.unlinkSync(full);
+        console.log(`[init] removed stale lock file: ${full}`);
+      } else if (entry.isDirectory()) {
+        removeLockFiles(full);
+      }
+    }
+  } catch { /* non-critical */ }
+}
+removeLockFiles(DATA_PATH);
 
 // ── WhatsApp client ───────────────────────────────────────────────────────────
 const client = new Client({
