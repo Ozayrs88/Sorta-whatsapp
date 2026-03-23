@@ -7,9 +7,11 @@ import pino from 'pino';
 
 const SORTA_URL = process.env.SORTA_URL?.replace(/\/$/, '');
 const INTAKE_SECRET = process.env.WHATSAPP_INTAKE_SECRET;
-// On Railway, mount a volume at /data and set AUTH_STATE_PATH=/data/auth_state
-// so the session survives redeploys. Falls back to ./auth_state locally.
-const AUTH_STATE_PATH = process.env.AUTH_STATE_PATH || 'auth_state';
+// Railway injects RAILWAY_VOLUME_MOUNT_PATH automatically when a volume is attached.
+// That's the preferred path. AUTH_STATE_PATH lets you override manually if needed.
+// Falls back to ./auth_state for local development.
+const AUTH_STATE_PATH = process.env.AUTH_STATE_PATH
+  || (process.env.RAILWAY_VOLUME_MOUNT_PATH ? `${process.env.RAILWAY_VOLUME_MOUNT_PATH}/auth_state` : 'auth_state');
 
 if (!SORTA_URL || !INTAKE_SECRET) {
   console.error('Missing SORTA_URL or WHATSAPP_INTAKE_SECRET in .env');
