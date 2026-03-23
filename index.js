@@ -69,10 +69,16 @@ client.on('qr', async (qr) => {
   console.log('\n────────────────────────────────────────────────────────\n');
 });
 
+client.on('authenticated', () => {
+  isConnected = true;
+  currentQRDataUrl = null;
+  console.log('[ws] ✓ authenticated');
+});
+
 client.on('ready', async () => {
   isConnected = true;
   currentQRDataUrl = null;
-  console.log('[ws] ✓ WhatsApp connected');
+  console.log('[ws] ✓ WhatsApp ready');
 
   // Log all groups so you can identify them in settings
   const chats = await client.getChats();
