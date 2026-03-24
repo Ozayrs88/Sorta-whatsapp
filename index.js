@@ -187,10 +187,11 @@ client.on('message_create', async (msg) => {
     groupName,
   });
 
+  // Only reply if Sorta actually processed the document
+  if (!result || result.ignored) return;
+
   let replyText;
-  if (!result) {
-    replyText = '⚠️ Received but there was an issue sending to Sorta. Check logs.';
-  } else if (result.classification === 'site_photo') {
+  if (result.classification === 'site_photo') {
     replyText = result.property
       ? `📸 Site photo filed under "${result.property}".`
       : '📸 Site photo saved — no property matched, filed as Unassigned.';
